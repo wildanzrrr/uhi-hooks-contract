@@ -15,6 +15,9 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 
 contract PointsHook is BaseHook, ERC6909 {
+    event Buy(address indexed user, address tokenA, address tokenB, uint256 amountA, uint256 amountB);
+    event Sell(address indexed user, address tokenA, address tokenB, uint256 amountA, uint256 amountB);
+
     constructor(IPoolManager _manager) BaseHook(_manager) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
@@ -43,21 +46,36 @@ contract PointsHook is BaseHook, ERC6909 {
         BalanceDelta delta,
         bytes calldata hookData
     ) internal override returns (bytes4, int128) {
-        // If this is not an ETH-TOKEN pool with this hook attached, ignore
+        // Extract user address from hookData
+        address user = address(0);
+        if (hookData.length > 0) {
+            user = abi.decode(hookData, (address));
+        }
+
+        // Emit event based on swap direction
+        if (swapParams.zeroForOne) {
+            // Buying TOKEN with ETH
+            address tokenA = Currency.unwrap(key.currency0);
+            address tokenB = Currency.unwrap(key.currency1);
+            uint256 amountA = uint256(int256(-delta.amount0()));
+            uint256 amountB = uint256(int256(delta.amount1()));
+            emit Buy(user, tokenA, tokenB, amountA, amountB);
+        } else {
+            // Selling TOKEN for ETH
+            address tokenA = Currency.unwrap(key.currency1);
+            address tokenB = Currency.unwrap(key.currency0);
+            uint256 amountA = uint256(int256(-delta.amount1()));
+            uint256 amountB = uint256(int256(delta.amount0()));
+            emit Sell(user, tokenA, tokenB, amountA, amountB);
+        }
+
+        // If this is not an ETH-TOKEN pool with this hook attached, ignore points minting
         if (!key.currency0.isAddressZero()) return (this.afterSwap.selector, 0);
 
         // We only mint points if user is buying TOKEN with ETH
         if (!swapParams.zeroForOne) return (this.afterSwap.selector, 0);
 
         // Mint points equal to 20% of the amount of ETH they spent
-        // Since its a zeroForOne swap:
-        // if amountSpecified < 0:
-        //      this is an "exact input for output" swap
-        //      amount of ETH they spent is equal to |amountSpecified|
-        // if amountSpecified > 0:
-        //      this is an "exact output for input" swap
-        //      amount of ETH they spent is equal to BalanceDelta.amount0()
-
         uint256 ethSpendAmount = uint256(int256(-delta.amount0()));
         uint256 pointsForSwap = ethSpendAmount / 5;
 
