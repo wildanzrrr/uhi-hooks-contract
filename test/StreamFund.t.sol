@@ -97,7 +97,7 @@ contract TestStreamFund is Test, Deployers {
         vm.deal(trader1, 10 ether);
     }
 
-    function test_registerStreamer() public {
+    function testRegisterStreamer() public {
         vm.startPrank(streamer1);
 
         // Register streamer
@@ -116,7 +116,26 @@ contract TestStreamFund is Test, Deployers {
         vm.stopPrank();
     }
 
-    function test_swap_buy_with_referral_mints_points() public {
+    function testRegisterStreamerAlreadyRegistered() public {
+        vm.startPrank(streamer1);
+
+        // First registration should succeed
+        hook.registerStreamer();
+
+        // Second registration should fail with "Already registered"
+        vm.expectRevert("Already registered");
+        hook.registerStreamer();
+
+        vm.stopPrank();
+    }
+
+    function testGetNotRegisteredStreamerInfo() public {
+        vm.startPrank(streamer1);
+        vm.expectRevert("Streamer not registered");
+        hook.getStreamerInfo(streamer1);
+    }
+
+    function testSwapBuyWithReferralMintsPoints() public {
         // Register streamer
         vm.prank(streamer1);
         hook.registerStreamer();
@@ -146,7 +165,7 @@ contract TestStreamFund is Test, Deployers {
         assertEq(streamerInfo.referralVolume, 0.1 ether);
     }
 
-    function test_swap_sell_with_referral_mints_points() public {
+    function testSwapSellWithReferralMintsPoints() public {
         // Register streamer
         vm.prank(streamer1);
         hook.registerStreamer();
@@ -187,7 +206,7 @@ contract TestStreamFund is Test, Deployers {
         assertGt(streamerInfo.referralVolume, 0.1 ether);
     }
 
-    function test_claimReward() public {
+    function testClaimReward() public {
         // Register streamer
         vm.prank(streamer1);
         hook.registerStreamer();
@@ -228,14 +247,14 @@ contract TestStreamFund is Test, Deployers {
         assertEq(pointsAfter, 0); // Points burned
     }
 
-    function test_claimReward_notRegistered() public {
+    function testClaimRewardNotRegistered() public {
         vm.startPrank(streamer1);
         vm.expectRevert("Not a registered streamer");
         hook.claimReward();
         vm.stopPrank();
     }
 
-    function test_claimReward_noVolume() public {
+    function testClaimRewardNoVolume() public {
         vm.startPrank(streamer1);
         hook.registerStreamer();
 
@@ -244,7 +263,7 @@ contract TestStreamFund is Test, Deployers {
         vm.stopPrank();
     }
 
-    function test_claimReward_noPoints() public {
+    function testClaimRewardNoPoints() public {
         // Register streamer
         vm.prank(streamer1);
         hook.registerStreamer();
@@ -281,7 +300,7 @@ contract TestStreamFund is Test, Deployers {
         vm.stopPrank();
     }
 
-    function test_swap_without_referral() public {
+    function testSwapWithoutReferral() public {
         // Register streamer
         vm.prank(streamer1);
         hook.registerStreamer();
@@ -305,7 +324,7 @@ contract TestStreamFund is Test, Deployers {
         assertEq(finalPoints, initialPoints);
     }
 
-    function test_points_calculation_precision() public {
+    function testPointsCalculationPrecision() public {
         // Register streamer
         vm.prank(streamer1);
         hook.registerStreamer();
