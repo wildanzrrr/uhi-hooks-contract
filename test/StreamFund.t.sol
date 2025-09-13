@@ -249,15 +249,33 @@ contract TestStreamFund is Test, Deployers {
         vm.prank(streamer1);
         hook.registerStreamer();
 
-        // Manually set referral volume without earning points (edge case)
-        // This shouldn't happen in normal operation, but we test the validation
-        vm.store(
-            address(hook),
-            keccak256(abi.encode(streamer1, 0)), // streamers[streamer1].referralVolume slot
-            bytes32(uint256(1 ether))
+        bytes memory hookData = abi.encode(streamer1);
+
+        // Generate some trading volume and points first
+        vm.prank(trader1);
+        swapRouter.swap{value: 1 ether}(
+            ethTokenKey,
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
         );
 
+        // Verify we have points and volume
+        assertGt(hook.getStreamerPoints(streamer1), 0);
+        assertGt(hook.getStreamerInfo(streamer1).referralVolume, 0);
+
+        // Manually burn all points to simulate having volume but no points
         vm.startPrank(streamer1);
+
+        // Use low-level storage manipulation to burn points without going through the contract
+        bytes32 balanceSlot = keccak256(abi.encode(hook.POINTS_TOKEN_ID(), keccak256(abi.encode(streamer1, 1))));
+        vm.store(address(hook), balanceSlot, bytes32(0));
+
+        // Verify points are now 0 but volume remains
+        assertEq(hook.getStreamerPoints(streamer1), 0);
+        assertGt(hook.getStreamerInfo(streamer1).referralVolume, 0);
+
+        // Now claim should fail with "No points available to burn"
         vm.expectRevert("No points available to burn");
         hook.claimReward();
         vm.stopPrank();
