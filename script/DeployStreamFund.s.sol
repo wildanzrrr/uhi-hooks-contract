@@ -11,16 +11,11 @@ contract DeployStreamFund is Script {
     // Constants
     address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    function setUp() public {}
-
     function run() public {
         vm.startBroadcast();
 
         // Get addresses from environment variables
         address poolManager = vm.envAddress("POOL_MANAGER");
-        address modifyLiquidityRouter = vm.envAddress("MODIFY_LIQUIDITY_ROUTER");
-        address swapRouter = vm.envAddress("SWAP_ROUTER");
-        address donateRouter = vm.envAddress("DONATE_ROUTER");
         bytes32 salt = vm.envBytes32("HOOK_SALT");
 
         console.log("Using PoolManager at:", poolManager);
@@ -31,12 +26,8 @@ contract DeployStreamFund is Script {
 
         console.log("StreamFund hook deployed at:", address(hook));
 
-        console.log("\n=== Complete Deployment Summary ===");
-        console.log("PoolManager:", poolManager);
-        console.log("ModifyLiquidityRouter:", modifyLiquidityRouter);
-        console.log("SwapRouter:", swapRouter);
-        console.log("DonateRouter:", donateRouter);
-        console.log("StreamFund Hook:", address(hook));
+        console.log("\n=== Add these to your .env file ===");
+        console.log("STREAMFUND_HOOK=", address(hook));
 
         vm.stopBroadcast();
     }

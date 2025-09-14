@@ -24,20 +24,18 @@ import {StreamFund} from "../src/StreamFund.sol";
 
 contract TestStreamFund is Test, Deployers {
     MockERC20 token;
-    MockERC20 token2;
 
     Currency ethCurrency = Currency.wrap(address(0));
     Currency tokenCurrency;
-    Currency token2Currency;
 
     StreamFund hook;
 
     PoolKey ethTokenKey;
     PoolKey tokenTokenKey;
 
-    address streamer1 = address(0x123);
-    address streamer2 = address(0x456);
-    address trader1 = address(0x789);
+    address streamer1 = address(1);
+    address streamer2 = address(2);
+    address trader1 = address(3);
 
     function setUp() public {
         // Deploy PoolManager and Router contracts
@@ -47,15 +45,9 @@ contract TestStreamFund is Test, Deployers {
         token = new MockERC20("Test Token", "TEST", 18);
         tokenCurrency = Currency.wrap(address(token));
 
-        // Deploy second TOKEN contract
-        token2 = new MockERC20("Test Token 2", "TEST2", 18);
-        token2Currency = Currency.wrap(address(token2));
-
         // Mint tokens
         token.mint(address(this), 1000 ether);
         token.mint(trader1, 1000 ether);
-        token2.mint(address(this), 1000 ether);
-        token2.mint(trader1, 1000 ether);
 
         // Deploy hook
         uint160 flags = uint160(Hooks.AFTER_SWAP_FLAG);
@@ -65,13 +57,10 @@ contract TestStreamFund is Test, Deployers {
         // Approve tokens
         token.approve(address(swapRouter), type(uint256).max);
         token.approve(address(modifyLiquidityRouter), type(uint256).max);
-        token2.approve(address(swapRouter), type(uint256).max);
-        token2.approve(address(modifyLiquidityRouter), type(uint256).max);
 
         // Set up approvals for trader1
         vm.startPrank(trader1);
         token.approve(address(swapRouter), type(uint256).max);
-        token2.approve(address(swapRouter), type(uint256).max);
         vm.stopPrank();
 
         // Initialize ETH-TOKEN pool

@@ -9,8 +9,6 @@ import {PoolDonateTest} from "v4-core/test/PoolDonateTest.sol";
 
 /// @notice Deploys PoolManager and router contracts
 contract DeployCore is Script {
-    function setUp() public {}
-
     function run() public {
         vm.startBroadcast();
 

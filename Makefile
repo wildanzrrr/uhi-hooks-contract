@@ -7,7 +7,7 @@ export $(shell sed 's/=.*//' .env)
 # Gas settings
 GAS_LIMIT = 30000000
 
-.PHONY: help deployCore generateSalt deploySF test clean anvil build fmt analyze testCoverage testCoverageReport
+.PHONY: help deployCore generateSalt deploySF initPool deployAll test clean anvil build fmt analyze testCoverage testCoverageReport
 
 help:
 		@echo "Available commands:"
@@ -55,6 +55,18 @@ deploySF:
 				--gas-limit $(GAS_LIMIT) \
 				-v
 
+initPool:
+		@echo "Deploying Mock Token and Pool to $(RPC_URL)..."
+			forge script script/InitPool.s.sol:InitPool \
+				--rpc-url $(RPC_URL) \
+				--private-key $(PRIVATE_KEY) \
+				--broadcast \
+				--gas-limit $(GAS_LIMIT) \
+				-v
+
+deployAll: deployCore generateSalt deploySF initPool
+		@echo "Complete StreamFund deployment finished"
+								
 # Run tests
 test:
 		@echo "Running tests..."
