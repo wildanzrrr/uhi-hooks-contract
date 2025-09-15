@@ -7,7 +7,7 @@ export $(shell sed 's/=.*//' .env)
 # Gas settings
 GAS_LIMIT = 30000000
 
-.PHONY: help deployCore generateSalt deploySF initPool deployAll test clean anvil build fmt analyze testCoverage testCoverageReport
+.PHONY: help deployCore generateSalt deploySF initPool deployAll test clean anvil build fmt analyze testCoverage testCoverageReport simulateTrades
 
 help:
 		@echo "Available commands:"
@@ -21,6 +21,7 @@ help:
 		@echo "  fmt               		- Format code"
 		@echo "  analyze           		- Run static analysis"
 		@echo "  testCoverageReport		- Generate coverage report"
+		@echo "  simulateTrades    		- Simulate buy/sell trades"
 
 # Start local Anvil node
 anvil:
@@ -95,3 +96,13 @@ analyze:
 # Generate coverage report
 testCoverageReport: 
 	forge coverage --no-match-coverage '^(script|test)/' --report lcov && genhtml lcov.info --branch-coverage --output-dir coverage --ignore-errors category --ignore-errors inconsistent --ignore-errors corrupt
+
+# Simulate trading after deployment
+simulateTrades:
+		@echo "Simulating trades on $(RPC_URL)..."
+		forge script script/SimulateTrades.s.sol:SimulateTrades \
+				--rpc-url $(RPC_URL) \
+				--private-key $(PRIVATE_KEY) \
+				--broadcast \
+				--gas-limit $(GAS_LIMIT) \
+				-v

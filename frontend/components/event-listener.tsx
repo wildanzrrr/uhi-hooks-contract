@@ -1,10 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
-import { toast, Toaster } from "sonner";
+import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { Address, createPublicClient, http } from "viem";
 
+interface ToastQueueItem {
+  id: string;
+  type: "buy" | "sell";
+  user: Address;
+  amount: string;
+  timestamp: number;
+}
+
 export default function EventListener() {
+  const toastQueueRef = useRef<ToastQueueItem[]>([]);
+  const isProcessingRef = useRef(false);
+  const currentToastRef = useRef<string | number | null>(null);
+
   useEffect(() => {
     // Get the environment variables
     const RPC_URL =
@@ -36,6 +48,68 @@ export default function EventListener() {
       return ethAmount.toFixed(4);
     };
 
+    // Toast queue management
+    const addToQueue = (item: ToastQueueItem) => {
+      toastQueueRef.current.push(item);
+      processQueue();
+    };
+
+    const processQueue = async () => {
+      if (isProcessingRef.current || toastQueueRef.current.length === 0) {
+        return;
+      }
+
+      isProcessingRef.current = true;
+
+      while (toastQueueRef.current.length > 0) {
+        // Check if this is the last item BEFORE taking it
+        const isLastItem = toastQueueRef.current.length === 1;
+
+        // Take from the beginning of queue (FIFO - First In First Out)
+        const item = toastQueueRef.current.shift()!;
+
+        // Dismiss current toast if exists
+        if (currentToastRef.current) {
+          toast.dismiss(currentToastRef.current);
+        }
+
+        // Show new toast with custom styling
+        const toastId =
+          item.type === "buy"
+            ? toast("💰 New Buy Transaction", {
+                description: `User ${formatAddress(
+                  item.user
+                )} bought with ${formatAmount(item.amount)} ETH`,
+                style: {
+                  background: "#10b981", // green background
+                  color: "white",
+                  border: "1px solid #059669",
+                },
+              })
+            : toast("📉 New Sell Transaction", {
+                description: `User ${formatAddress(
+                  item.user
+                )} sold for ${formatAmount(item.amount)} ETH`,
+                style: {
+                  background: "#ef4444", // red background
+                  color: "white",
+                  border: "1px solid #dc2626",
+                },
+              });
+
+        currentToastRef.current = toastId;
+
+        // Display time: 3 seconds for last item, 0.5 seconds for others
+        const displayTime = isLastItem ? 3000 : 500;
+
+        // Wait for the display duration
+        await new Promise((resolve) => setTimeout(resolve, displayTime));
+      }
+
+      isProcessingRef.current = false;
+      currentToastRef.current = null;
+    };
+
     // Set up event listeners
     const buyUnwatch = client.watchEvent({
       address: CONTRACT_ADDRESS,
@@ -54,10 +128,14 @@ export default function EventListener() {
       onLogs: (logs) => {
         for (const log of logs) {
           const { args } = log;
-          toast.success("New Buy Transaction", {
-            description: `User ${formatAddress(
-              args.user as Address
-            )} bought with ${formatAmount(args.amountA!.toString())} ETH`,
+          console.log("BUYY", args);
+
+          addToQueue({
+            id: `buy-${Date.now()}-${Math.random()}`,
+            type: "buy",
+            user: args.user as Address,
+            amount: args.amountA!.toString(),
+            timestamp: Date.now(),
           });
         }
       },
@@ -80,10 +158,14 @@ export default function EventListener() {
       onLogs: (logs) => {
         for (const log of logs) {
           const { args } = log;
-          toast.error("New Sell Transaction", {
-            description: `User ${formatAddress(
-              args.user as Address
-            )} sold for ${formatAmount(args.amountB!.toString())} ETH`,
+          console.log("SELL", args);
+
+          addToQueue({
+            id: `sell-${Date.now()}-${Math.random()}`,
+            type: "sell",
+            user: args.user as Address,
+            amount: args.amountB!.toString(),
+            timestamp: Date.now(),
           });
         }
       },
@@ -93,8 +175,14 @@ export default function EventListener() {
     return () => {
       buyUnwatch();
       sellUnwatch();
+      // Clear any remaining toasts
+      if (currentToastRef.current) {
+        toast.dismiss(currentToastRef.current);
+      }
+      toastQueueRef.current = [];
+      isProcessingRef.current = false;
     };
   }, []);
 
-  return <Toaster position="top-center" />;
+  return null;
 }

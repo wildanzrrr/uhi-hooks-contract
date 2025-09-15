@@ -15,11 +15,6 @@ export default function Home() {
               Streamer video
             </div>
 
-            {/* Overlay Notification */}
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-gray-700 text-white py-2 px-4 rounded">
-              Overlay Notification
-            </div>
-
             {/* EventListener component for contract events */}
             <EventListener />
           </div>
