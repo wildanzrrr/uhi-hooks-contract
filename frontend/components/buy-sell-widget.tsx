@@ -10,7 +10,7 @@ export default function BuySellWidget() {
   return (
     <Card className="w-full h-full">
       <CardHeader className="py-3">
-        <CardTitle>Widget Buy and Sell</CardTitle>
+        <CardTitle>APE Now, Think Later 📈</CardTitle>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="buy" className="w-full">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react"; // Add useState and useEffect
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTransactionsStore } from "@/stores/transaction";
 
@@ -20,7 +20,7 @@ const formatRelativeTime = (timestamp: number): string => {
 
 export default function TransactionsHistory() {
   const { transactions } = useTransactionsStore(); // Get transactions from store
-  const [tick, setTick] = useState(0); // State to trigger re-renders for time updates
+  const [, setTick] = useState(0); // State to trigger re-renders for time updates
 
   // Update every second to refresh relative times
   useEffect(() => {

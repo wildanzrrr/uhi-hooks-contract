@@ -10,13 +10,16 @@ export interface Transaction {
 
 interface TransactionsState {
   transactions: Transaction[];
+  transactionCount: number; // New: Track transaction count for reactivity
   addTransaction: (transaction: Transaction) => void;
 }
 
 export const useTransactionsStore = create<TransactionsState>((set) => ({
   transactions: [],
+  transactionCount: 0,
   addTransaction: (transaction) =>
     set((state) => ({
       transactions: [transaction, ...state.transactions], // Add to the beginning for latest-first display
+      transactionCount: state.transactionCount + 1, // Increment on new transaction
     })),
 }));

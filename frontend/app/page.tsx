@@ -1,5 +1,6 @@
 import BuySellWidget from "@/components/buy-sell-widget";
 import EventListener from "@/components/event-listener";
+import StreamerPoints from "@/components/streamer-points";
 import TransactionsHistory from "@/components/transaction-history";
 
 export default function Home() {
@@ -26,7 +27,10 @@ export default function Home() {
         </div>
 
         {/* Right side - Buy/Sell Widget */}
-        <div className="bg-gray-200 rounded-lg p-4">
+        <div className="flex flex-col space-y-5 bg-gray-200 rounded-lg p-4">
+          <StreamerPoints
+            userAddress={"0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"}
+          />
           <BuySellWidget />
         </div>
       </div>
