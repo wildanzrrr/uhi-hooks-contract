@@ -1,5 +1,6 @@
 "use client";
 
+import { useTransactionsStore } from "@/stores/transaction";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Address, createPublicClient, http } from "viem";
@@ -16,6 +17,7 @@ export default function EventListener() {
   const toastQueueRef = useRef<ToastQueueItem[]>([]);
   const isProcessingRef = useRef(false);
   const currentToastRef = useRef<string | number | null>(null);
+  const addTransaction = useTransactionsStore((state) => state.addTransaction); // Get the add function from store
 
   useEffect(() => {
     // Get the environment variables
@@ -98,6 +100,15 @@ export default function EventListener() {
               });
 
         currentToastRef.current = toastId;
+
+        // Add to transaction history (via Zustand store)
+        addTransaction({
+          id: item.id,
+          type: item.type,
+          user: formatAddress(item.user),
+          amount: `${formatAmount(item.amount)} ETH`,
+          timestamp: item.timestamp,
+        });
 
         // Display time: 3 seconds for last item, 0.5 seconds for others
         const displayTime = isLastItem ? 3000 : 500;
@@ -182,7 +193,7 @@ export default function EventListener() {
       toastQueueRef.current = [];
       isProcessingRef.current = false;
     };
-  }, []);
+  }, [addTransaction]); // Add addTransaction to dependencies
 
   return null;
 }
