@@ -12,9 +12,16 @@ export default function Home() {
         <div className="lg:col-span-3 grid grid-rows-[1fr_auto] gap-4">
           {/* Streamer Video */}
           <div className="bg-gray-200 rounded-lg relative flex items-center justify-center">
-            <div className="text-3xl font-bold text-gray-600">
-              Streamer video
-            </div>
+            <iframe
+              width="100%"
+              height="100%"
+              src="https://www.youtube.com/embed/_xRtq_lbN3o?start=256"
+              title="YouTube video player"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="rounded-lg"
+            ></iframe>
 
             {/* EventListener component for contract events */}
             <EventListener />
