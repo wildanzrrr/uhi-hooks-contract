@@ -309,220 +309,371 @@ contract TestStreamFund is Test, Deployers {
         assertEq(rewardToken.ratePerPoint, 2e18);
     }
 
-    // function testGetNotRegisteredStreamerInfo() public {
-    //     vm.startPrank(streamer1);
-    //     vm.expectRevert("Streamer not registered");
-    //     hook.getStreamerInfo(streamer1);
-    // }
+    function testGetStreamerTokenVolumeNotRegistered() public {
+        vm.startPrank(streamer1);
+        assertEq(hook.getStreamerTokenVolume(streamer1, address(token)), 0);
+    }
 
-    // function testSwapBuyWithReferralMintsPoints() public {
-    //     // Register streamer
-    //     vm.prank(streamer1);
-    //     hook.registerStreamer();
+    function testGetStreamerPointsNotRegistered() public {
+        vm.startPrank(streamer1);
+        assertEq(hook.getStreamerPoints(streamer1, address(token)), 0);
+    }
 
-    //     // Check initial points
-    //     uint256 initialPoints = hook.getStreamerPoints(streamer1);
-    //     assertEq(initialPoints, 0);
+    function testClaimRewardNotRegistered() public {
+        vm.prank(stranger);
 
-    //     // Prepare referral data
-    //     bytes memory hookData = abi.encode(streamer1);
+        vm.expectRevert("Not a registered streamer");
+        hook.claimReward(address(token));
+    }
 
-    //     // trader swaps 0.1 ETH for tokens using streamer1's referral
-    //     vm.prank(trader);
-    //     swapRouter.swap{value: 0.1 ether}(
-    //         ethTokenKey,
-    //         SwapParams({zeroForOne: true, amountSpecified: -0.1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
-    //         PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-    //         hookData
-    //     );
+    function testClaimRewardTokenNotSetup() public {
+        // Register streamer first
+        vm.prank(streamer1);
+        hook.registerStreamer();
 
-    //     // Check streamer got 5 points per ETH (0.1 * 5 = 0.5 ETH worth of points)
-    //     uint256 pointsAfterBuy = hook.getStreamerPoints(streamer1);
-    //     assertEq(pointsAfterBuy, 0.5 ether);
+        // Create a new token that hasn't been setup
+        MockERC20 newToken = new MockERC20("New Token", "NEW", 18);
 
-    //     // Check referral volume increased
-    //     StreamFund.Streamer memory streamerInfo = hook.getStreamerInfo(streamer1);
-    //     assertEq(streamerInfo.referralVolume, 0.1 ether);
-    // }
+        vm.prank(streamer1);
+        vm.expectRevert("Reward token not setup");
+        hook.claimReward(address(newToken));
+    }
 
-    // function testSwapSellWithReferralMintsPoints() public {
-    //     // Register streamer
-    //     vm.prank(streamer1);
-    //     hook.registerStreamer();
+    function testClaimRewardNoVolume() public {
+        // Register streamer first
+        vm.prank(streamer1);
+        hook.registerStreamer();
 
-    //     bytes memory hookData = abi.encode(streamer1);
+        // Now claim should fail with "No referral volume to claim for this token"
+        vm.prank(streamer1);
+        vm.expectRevert("No referral volume to claim for this token");
+        hook.claimReward(address(token));
+    }
 
-    //     // First buy some tokens
-    //     vm.startPrank(trader);
-    //     swapRouter.swap{value: 0.1 ether}(
-    //         ethTokenKey,
-    //         SwapParams({zeroForOne: true, amountSpecified: -0.1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
-    //         PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-    //         hookData
-    //     );
+    function testClaimRewardInsufficientContractBalance() public {
+        // Register streamer
+        vm.prank(streamer1);
+        hook.registerStreamer();
 
-    //     uint256 pointsAfterBuy = hook.getStreamerPoints(streamer1);
+        bytes memory hookData = abi.encode(streamer1);
 
-    //     // Now sell tokens for ETH (this should give 2 points per ETH)
-    //     swapRouter.swap(
-    //         ethTokenKey,
-    //         SwapParams({
-    //             zeroForOne: false,
-    //             amountSpecified: -50 ether, // Sell some tokens
-    //             sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
-    //         }),
-    //         PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-    //         hookData
-    //     );
+        // Generate some trading volume and points first
+        vm.prank(trader);
+        swapRouter.swap{value: 1 ether}(
+            ethTokenKey,
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
 
-    //     vm.stopPrank();
+        // Verify we have points and volume
+        assertGt(hook.getStreamerPoints(streamer1, address(token)), 0);
+        assertGt(hook.getStreamerTokenVolume(streamer1, address(token)), 0);
 
-    //     // Points should have increased (buy gives 5x, sell gives 2x per ETH)
-    //     uint256 pointsAfterSell = hook.getStreamerPoints(streamer1);
-    //     assertGt(pointsAfterSell, pointsAfterBuy);
+        // Ensure contract has zero token balance to trigger insufficient balance
+        uint256 contractTokenBalance = token.balanceOf(address(hook));
+        if (contractTokenBalance > 0) {
+            token.transfer(address(0xdead), contractTokenBalance);
+        }
+        assertEq(token.balanceOf(address(hook)), 0);
 
-    //     // Check referral volume includes both buy and sell
-    //     StreamFund.Streamer memory streamerInfo = hook.getStreamerInfo(streamer1);
-    //     assertGt(streamerInfo.referralVolume, 0.1 ether);
-    // }
+        // Now claim should fail with "Insufficient reward token balance"
+        vm.prank(streamer1);
+        vm.expectRevert("Insufficient reward token balance");
+        hook.claimReward(address(token));
+    }
 
-    // function testClaimReward() public {
-    //     // Register streamer
-    //     vm.prank(streamer1);
-    //     hook.registerStreamer();
+    function testClaimRewardSuccess() public {
+        // Register streamer
+        vm.prank(streamer1);
+        hook.registerStreamer();
 
-    //     bytes memory hookData = abi.encode(streamer1);
+        bytes memory hookData = abi.encode(streamer1);
 
-    //     // Generate some trading volume and points
-    //     vm.prank(trader);
-    //     swapRouter.swap{value: 1 ether}(
-    //         ethTokenKey,
-    //         SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
-    //         PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-    //         hookData
-    //     );
+        // Generate some trading volume and points first
+        vm.prank(trader);
+        swapRouter.swap{value: 1 ether}(
+            ethTokenKey,
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
 
-    //     // Check initial state
-    //     StreamFund.Streamer memory streamerInfoBefore = hook.getStreamerInfo(streamer1);
-    //     uint256 pointsBefore = hook.getStreamerPoints(streamer1);
+        // Verify we have points and volume
+        uint256 points = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volume = hook.getStreamerTokenVolume(streamer1, address(token));
+        assertGt(points, 0);
+        assertGt(volume, 0);
 
-    //     assertEq(streamerInfoBefore.referralVolume, 1 ether);
-    //     assertEq(pointsBefore, 5 ether); // 1 ETH * 5 points per ETH
+        // Fund contract with some reward tokens (ensure enough for the claim)
+        uint256 requiredTokens = points * 100e18; // rate is 100 tokens per point from setUp
+        token.mint(address(hook), requiredTokens);
+        assertEq(token.balanceOf(address(hook)), requiredTokens);
 
-    //     // Claim reward
-    //     vm.startPrank(streamer1);
+        // Claim rewards
+        vm.prank(streamer1);
 
-    //     vm.expectEmit(true, false, false, false);
-    //     emit StreamFund.RewardClaimed(streamer1, 5 ether, 1 ether);
+        vm.expectEmit();
+        emit StreamFund.RewardClaimed(streamer1, points, volume, address(token), requiredTokens);
+        hook.claimReward(address(token));
 
-    //     hook.claimReward();
+        // Verify referral volume reset to 0
+        assertEq(hook.getStreamerTokenVolume(streamer1, address(token)), 0);
 
-    //     vm.stopPrank();
+        // Verify points are burned (should be 0 now)
+        assertEq(hook.getStreamerPoints(streamer1, address(token)), 0);
 
-    //     // Check state after claim
-    //     StreamFund.Streamer memory streamerInfoAfter = hook.getStreamerInfo(streamer1);
-    //     uint256 pointsAfter = hook.getStreamerPoints(streamer1);
+        // Verify streamer received the tokens
+        assertEq(token.balanceOf(streamer1), requiredTokens);
 
-    //     assertEq(streamerInfoAfter.referralVolume, 0); // Volume reset
-    //     assertEq(pointsAfter, 0); // Points burned
-    // }
+        // Verify contract token balance is now 0
+        assertEq(token.balanceOf(address(hook)), 0);
+    }
 
-    // function testClaimRewardNotRegistered() public {
-    //     vm.startPrank(streamer1);
-    //     vm.expectRevert("Not a registered streamer");
-    //     hook.claimReward();
-    //     vm.stopPrank();
-    // }
+    function testBuyAndThenSellWithCooldown() public {
+        // Register streamer
+        vm.prank(streamer1);
+        hook.registerStreamer();
 
-    // function testClaimRewardNoVolume() public {
-    //     vm.startPrank(streamer1);
-    //     hook.registerStreamer();
+        bytes memory hookData = abi.encode(streamer1);
 
-    //     vm.expectRevert("No referral volume to claim");
-    //     hook.claimReward();
-    //     vm.stopPrank();
-    // }
+        // Generate some trading volume and points first
+        vm.prank(trader);
+        swapRouter.swap{value: 1 ether}(
+            ethTokenKey,
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
 
-    // function testClaimRewardNoPoints() public {
-    //     // Register streamer
-    //     vm.prank(streamer1);
-    //     hook.registerStreamer();
+        // Verify we have points and volume
+        uint256 pointsAfterBuy = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeAfterBuy = hook.getStreamerTokenVolume(streamer1, address(token));
+        assertGt(pointsAfterBuy, 0);
+        assertGt(volumeAfterBuy, 0);
 
-    //     bytes memory hookData = abi.encode(streamer1);
+        // Wait for cooldown period to pass (60 seconds + 1 for safety)
+        vm.warp(block.timestamp + 61);
 
-    //     // Generate some trading volume and points first
-    //     vm.prank(trader);
-    //     swapRouter.swap{value: 1 ether}(
-    //         ethTokenKey,
-    //         SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
-    //         PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-    //         hookData
-    //     );
+        // Now do a sell swap to generate more volume and points
+        vm.prank(trader);
+        swapRouter.swap(
+            ethTokenKey,
+            SwapParams({
+                zeroForOne: false,
+                amountSpecified: int256(100e18),
+                sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
 
-    //     // Verify we have points and volume
-    //     assertGt(hook.getStreamerPoints(streamer1), 0);
-    //     assertGt(hook.getStreamerInfo(streamer1).referralVolume, 0);
+        // Verify we have more points and volume after the sell
+        uint256 pointsAfterSell = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeAfterSell = hook.getStreamerTokenVolume(streamer1, address(token));
+        assertGt(pointsAfterSell, pointsAfterBuy);
+        assertGt(volumeAfterSell, volumeAfterBuy);
+    }
 
-    //     // Manually burn all points to simulate having volume but no points
-    //     vm.startPrank(streamer1);
+    function testBuyAndSellWithoutCooldown() public {
+        // Register streamer
+        vm.prank(streamer1);
+        hook.registerStreamer();
 
-    //     // Use low-level storage manipulation to burn points without going through the contract
-    //     bytes32 balanceSlot = keccak256(abi.encode(hook.POINTS_TOKEN_ID(), keccak256(abi.encode(streamer1, 1))));
-    //     vm.store(address(hook), balanceSlot, bytes32(0));
+        bytes memory hookData = abi.encode(streamer1);
 
-    //     // Verify points are now 0 but volume remains
-    //     assertEq(hook.getStreamerPoints(streamer1), 0);
-    //     assertGt(hook.getStreamerInfo(streamer1).referralVolume, 0);
+        // Generate some trading volume and points first
+        vm.prank(trader);
+        swapRouter.swap{value: 1 ether}(
+            ethTokenKey,
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
 
-    //     // Now claim should fail with "No points available to burn"
-    //     vm.expectRevert("No points available to burn");
-    //     hook.claimReward();
-    //     vm.stopPrank();
-    // }
+        // Verify we have points and volume
+        uint256 pointsAfterBuy = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeAfterBuy = hook.getStreamerTokenVolume(streamer1, address(token));
+        assertGt(pointsAfterBuy, 0);
+        assertGt(volumeAfterBuy, 0);
 
-    // function testSwapWithoutReferral() public {
-    //     // Register streamer
-    //     vm.prank(streamer1);
-    //     hook.registerStreamer();
+        // Now do a sell swap immediately - this should succeed but not award points due to cooldown
+        vm.expectEmit();
+        emit StreamFund.TradeCooldownActive(streamer1);
 
-    //     uint256 initialPoints = hook.getStreamerPoints(streamer1);
+        swapRouter.swap(
+            ethTokenKey,
+            SwapParams({
+                zeroForOne: false,
+                amountSpecified: int256(100e18),
+                sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
 
-    //     // Swap without referral (empty hookData)
-    //     vm.prank(trader);
-    //     swapRouter.swap{value: 0.1 ether}(
-    //         ethTokenKey,
-    //         SwapParams({zeroForOne: true, amountSpecified: -0.1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
-    //         PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-    //         ZERO_BYTES
-    //     );
+        // Verify points and volume remain unchanged after sell during cooldown
+        uint256 pointsAfterCooldownSell = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeAfterCooldownSell = hook.getStreamerTokenVolume(streamer1, address(token));
+        assertEq(pointsAfterCooldownSell, pointsAfterBuy);
+        assertEq(volumeAfterCooldownSell, volumeAfterBuy);
+    }
 
-    //     // Streamer should get no points or volume
-    //     StreamFund.Streamer memory streamerInfo = hook.getStreamerInfo(streamer1);
-    //     uint256 finalPoints = hook.getStreamerPoints(streamer1);
+    function testAfterSwapEarlyReturnNonETHCurrency0() public {
+        // Register streamer
+        vm.prank(streamer1);
+        hook.registerStreamer();
 
-    //     assertEq(streamerInfo.referralVolume, 0);
-    //     assertEq(finalPoints, initialPoints);
-    // }
+        bytes memory hookData = abi.encode(streamer1);
 
-    // function testPointsCalculationPrecision() public {
-    //     // Register streamer
-    //     vm.prank(streamer1);
-    //     hook.registerStreamer();
+        // Create a TOKEN-TOKEN pool (both currencies are non-zero addresses)
+        // This should trigger the early return on line 217 since currency0 is not ETH
+        MockERC20 token2 = new MockERC20("Test Token 2", "TEST2", 18);
+        Currency token2Currency = Currency.wrap(address(token2));
 
-    //     bytes memory hookData = abi.encode(streamer1);
+        token2.mint(address(this), 1_000_000e18);
+        token2.approve(address(swapRouter), type(uint256).max);
+        token2.approve(address(modifyLiquidityRouter), type(uint256).max);
 
-    //     // Test with small amount: 0.001 ETH
-    //     vm.prank(trader);
-    //     swapRouter.swap{value: 0.001 ether}(
-    //         ethTokenKey,
-    //         SwapParams({zeroForOne: true, amountSpecified: -0.001 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
-    //         PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-    //         hookData
-    //     );
+        // Initialize TOKEN-TOKEN2 pool (no ETH involved)
+        (PoolKey memory tokenToKey2,) = initPool(tokenCurrency, token2Currency, hook, 3000, SQRT_PRICE_1_1);
 
-    //     // Should get exactly 5x the ETH amount in points
-    //     uint256 expectedPoints = 0.001 ether * 5;
-    //     uint256 actualPoints = hook.getStreamerPoints(streamer1);
-    //     assertEq(actualPoints, expectedPoints);
-    // }
+        // Add liquidity to TOKEN-TOKEN2 pool
+        uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(60);
+        uint256 tokensToAdd = 1000e18;
+        uint128 liquidityDelta =
+            LiquidityAmounts.getLiquidityForAmount0(SQRT_PRICE_1_1, sqrtPriceAtTickUpper, tokensToAdd);
+
+        modifyLiquidityRouter.modifyLiquidity(
+            tokenToKey2,
+            ModifyLiquidityParams({
+                tickLower: -60,
+                tickUpper: 60,
+                liquidityDelta: int256(uint256(liquidityDelta)),
+                salt: bytes32(0)
+            }),
+            ZERO_BYTES
+        );
+
+        // Get initial points and volume (should be 0)
+        uint256 pointsBefore = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeBefore = hook.getStreamerTokenVolume(streamer1, address(token));
+
+        // Do a swap on TOKEN-TOKEN2 pool - this should trigger early return
+        swapRouter.swap(
+            tokenToKey2,
+            SwapParams({zeroForOne: true, amountSpecified: -100e18, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
+
+        // Verify no points or volume were awarded due to early return
+        uint256 pointsAfter = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeAfter = hook.getStreamerTokenVolume(streamer1, address(token));
+        assertEq(pointsAfter, pointsBefore);
+        assertEq(volumeAfter, volumeBefore);
+    }
+
+    function testAfterSwapEarlyReturnZeroReferral() public {
+        bytes memory hookDataZeroReferral = abi.encode(address(0));
+
+        // Get initial points and volume (should be 0)
+        uint256 pointsBefore = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeBefore = hook.getStreamerTokenVolume(streamer1, address(token));
+
+        // Do a swap with zero referral - this should trigger early return
+        vm.prank(trader);
+        swapRouter.swap{value: 1 ether}(
+            ethTokenKey,
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookDataZeroReferral
+        );
+
+        // Verify no points or volume were awarded due to early return
+        uint256 pointsAfter = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeAfter = hook.getStreamerTokenVolume(streamer1, address(token));
+        assertEq(pointsAfter, pointsBefore);
+        assertEq(volumeAfter, volumeBefore);
+    }
+
+    function testAfterSwapEarlyReturnUnregisteredReferral() public {
+        // Don't register streamer1 - they should be unregistered
+        assertFalse(hook.isRegistered(streamer1));
+
+        bytes memory hookData = abi.encode(streamer1);
+
+        // Get initial points and volume (should be 0)
+        uint256 pointsBefore = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeBefore = hook.getStreamerTokenVolume(streamer1, address(token));
+
+        // Do a swap with unregistered referral - this should trigger early return
+        vm.prank(trader);
+        swapRouter.swap{value: 1 ether}(
+            ethTokenKey,
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
+
+        // Verify no points or volume were awarded due to early return
+        uint256 pointsAfter = hook.getStreamerPoints(streamer1, address(token));
+        uint256 volumeAfter = hook.getStreamerTokenVolume(streamer1, address(token));
+        assertEq(pointsAfter, pointsBefore);
+        assertEq(volumeAfter, volumeBefore);
+    }
+
+    function testAfterSwapEarlyReturnTokenNotSetup() public {
+        // Create a new token that hasn't been setup for rewards
+        MockERC20 newToken = new MockERC20("Unsetup Token", "UNSETUP", 18);
+        Currency newTokenCurrency = Currency.wrap(address(newToken));
+
+        newToken.mint(address(this), 1_000_000e18);
+        newToken.approve(address(swapRouter), type(uint256).max);
+        newToken.approve(address(modifyLiquidityRouter), type(uint256).max);
+
+        // Initialize ETH-NEWTOKEN pool
+        (PoolKey memory ethNewTokenKey,) = initPool(ethCurrency, newTokenCurrency, hook, 3000, SQRT_PRICE_1_1);
+
+        // Add liquidity to ETH-NEWTOKEN pool
+        uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(60);
+        uint256 ethToAdd = 10 ether;
+        uint128 liquidityDelta = LiquidityAmounts.getLiquidityForAmount0(SQRT_PRICE_1_1, sqrtPriceAtTickUpper, ethToAdd);
+
+        modifyLiquidityRouter.modifyLiquidity{value: ethToAdd}(
+            ethNewTokenKey,
+            ModifyLiquidityParams({
+                tickLower: -60,
+                tickUpper: 60,
+                liquidityDelta: int256(uint256(liquidityDelta)),
+                salt: bytes32(0)
+            }),
+            ZERO_BYTES
+        );
+
+        // Register streamer
+        vm.prank(streamer1);
+        hook.registerStreamer();
+
+        bytes memory hookData = abi.encode(streamer1);
+
+        // Get initial points and volume (should be 0)
+        uint256 pointsBefore = hook.getStreamerPoints(streamer1, address(newToken));
+        uint256 volumeBefore = hook.getStreamerTokenVolume(streamer1, address(newToken));
+
+        // Do a swap with a token that doesn't have reward setup - this should trigger early return
+        vm.prank(trader);
+        swapRouter.swap{value: 1 ether}(
+            ethNewTokenKey,
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            hookData
+        );
+
+        // Verify no points or volume were awarded due to early return
+        uint256 pointsAfter = hook.getStreamerPoints(streamer1, address(newToken));
+        uint256 volumeAfter = hook.getStreamerTokenVolume(streamer1, address(newToken));
+        assertEq(pointsAfter, pointsBefore);
+        assertEq(volumeAfter, volumeBefore);
+    }
 }

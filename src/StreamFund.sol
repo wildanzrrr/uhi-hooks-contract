@@ -50,7 +50,7 @@ contract StreamFund is BaseHook, ERC6909 {
     event RewardUpdaterGranted(address indexed tokenAddress, address indexed updater);
     event RewardUpdaterRevoked(address indexed tokenAddress, address indexed updater);
     event PointsEarned(address indexed streamer, address indexed buyer, address indexed tokenAddress, uint256 points);
-    event TradeCooldownActive(address indexed streamer, address indexed buyer, uint256 timeRemaining);
+    event TradeCooldownActive(address indexed streamer);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner can call this function");
@@ -155,7 +155,6 @@ contract StreamFund is BaseHook, ERC6909 {
         // Check how many points the streamer has for this token
         uint256 tokenId = uint256(uint160(tokenAddress));
         uint256 availablePoints = balanceOf[msg.sender][tokenId];
-        require(availablePoints > 0, "No points available to burn for this token");
 
         RewardToken storage reward = rewardTokens[tokenAddress];
 
@@ -233,7 +232,7 @@ contract StreamFund is BaseHook, ERC6909 {
         if (lastTrade != 0 && currentTime - lastTrade < TRADE_COOLDOWN) {
             // Update last trade time but don't award points
             lastTradeTime[referral][msg.sender] = currentTime;
-            emit TradeCooldownActive(referral, msg.sender, TRADE_COOLDOWN - (currentTime - lastTrade));
+            emit TradeCooldownActive(referral);
             return (this.afterSwap.selector, 0);
         }
 
