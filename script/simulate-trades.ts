@@ -14,6 +14,7 @@ const STREAMER_PK = process.env.STREAMER_PK!;
 const RPC_URL = process.env.RPC_URL!;
 
 const NUM_TRADES = 10;
+const CLAIM_ACTIVE = false; // Set to false to skip claim reward functionality
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 const traderWallet = new ethers.Wallet(TRADER_PK, provider);
@@ -30,6 +31,7 @@ const streamFundAbi = [
   "function getStreamerPoints(address streamerAddress, address tokenAddress) view returns (uint256)",
   "function getStreamerTokenVolume(address streamerAddress, address tokenAddress) view returns (uint256)",
   "function getRewardTokenInfo(address tokenAddress) view returns (tuple(address tokenAddress, uint256 ratePerPoint))",
+  "function claimReward(address tokenAddress) external",
 ];
 const erc20Abi = [
   "function balanceOf(address) view returns (uint256)",
@@ -83,6 +85,8 @@ async function main() {
     console.log("");
   }
   await showFinalResults();
+
+  await claimRewards();
 }
 
 async function setupAccounts() {
@@ -150,40 +154,98 @@ async function performBuyOperation(hookData: string) {
     ethers.formatEther(tradeAmount),
     "ETH..."
   );
-  const tx = await swapRouter.swap(
-    poolKey,
-    {
-      zeroForOne: true,
-      amountSpecified: -tradeAmount,
-      sqrtPriceLimitX96: 4295128739n + 1n,
-    },
-    { takeClaims: false, settleUsingBurn: false },
-    hookData,
-    { value: tradeAmount, nonce: traderNonce }
-  );
-  await tx.wait();
-  traderNonce++;
-  const points = await hook.getStreamerPoints(
-    streamerWallet.address,
-    MOCK_TOKEN
-  );
-  const volume = await hook.getStreamerTokenVolume(
-    streamerWallet.address,
-    MOCK_TOKEN
-  );
-  const traderTokens = await token.balanceOf(traderWallet.address);
-  console.log("After BUY:");
-  console.log("  Streamer points:", ethers.formatEther(points));
-  console.log("  Streamer referral volume:", ethers.formatEther(volume), "ETH");
-  console.log("  Trader tokens:", ethers.formatEther(traderTokens));
+
+  try {
+    // Check trader's ETH balance before trade
+    const traderBalance = await provider.getBalance(traderWallet.address);
+    if (traderBalance < tradeAmount) {
+      throw new Error(
+        `Insufficient ETH balance. Required: ${ethers.formatEther(
+          tradeAmount
+        )}, Available: ${ethers.formatEther(traderBalance)}`
+      );
+    }
+
+    // Estimate gas before sending transaction
+    const gasEstimate = await swapRouter.swap.estimateGas(
+      poolKey,
+      {
+        zeroForOne: true,
+        amountSpecified: -tradeAmount,
+        sqrtPriceLimitX96: 4295128739n + 1n,
+      },
+      { takeClaims: false, settleUsingBurn: false },
+      hookData,
+      { value: tradeAmount }
+    );
+
+    console.log(`Estimated gas: ${gasEstimate.toString()}`);
+
+    const tx = await swapRouter.swap(
+      poolKey,
+      {
+        zeroForOne: true,
+        amountSpecified: -tradeAmount,
+        sqrtPriceLimitX96: 4295128739n + 1n,
+      },
+      { takeClaims: false, settleUsingBurn: false },
+      hookData,
+      {
+        value: tradeAmount,
+        nonce: traderNonce,
+        gasLimit: (gasEstimate * 120n) / 100n, // Add 20% buffer
+      }
+    );
+
+    const receipt = await tx.wait();
+    console.log(
+      `Transaction successful. Gas used: ${receipt.gasUsed.toString()}`
+    );
+    traderNonce++;
+
+    const points = await hook.getStreamerPoints(
+      streamerWallet.address,
+      MOCK_TOKEN
+    );
+    const volume = await hook.getStreamerTokenVolume(
+      streamerWallet.address,
+      MOCK_TOKEN
+    );
+    const traderTokens = await token.balanceOf(traderWallet.address);
+    console.log("After BUY:");
+    console.log("  Streamer points:", ethers.formatEther(points));
+    console.log(
+      "  Streamer referral volume:",
+      ethers.formatEther(volume),
+      "ETH"
+    );
+    console.log("  Trader tokens:", ethers.formatEther(traderTokens));
+  } catch (error) {
+    console.error("BUY operation failed:", error.message);
+    if (error.code === "CALL_EXCEPTION") {
+      console.log("Transaction reverted. This could be due to:");
+      console.log("- Pool liquidity issues");
+      console.log("- Price slippage limits");
+      console.log("- Hook contract revert conditions");
+      console.log("- Gas limit issues");
+    }
+    throw error;
+  }
 }
 
 async function performSellOperation(hookData: string) {
   const tokenBalance = await token.balanceOf(traderWallet.address);
+
+  if (tokenBalance === 0n) {
+    console.log("No tokens to sell, skipping SELL operation");
+    return;
+  }
+
   // Randomize sell percentage between 10% and 50%
   const percentage = 0.1 + Math.random() * 0.4; // 10% to 50%
   const tokensToSell =
     (tokenBalance * BigInt(Math.floor(percentage * 100))) / 100n;
+
   console.log("Performing SELL operation...");
   console.log(
     "  Selling",
@@ -192,37 +254,78 @@ async function performSellOperation(hookData: string) {
     (percentage * 100).toFixed(1),
     "% of balance)"
   );
-  await token.approve(SWAP_ROUTER, tokensToSell, { nonce: traderNonce });
-  traderNonce++;
-  const tx = await swapRouter.swap(
-    poolKey,
-    {
-      zeroForOne: false,
-      amountSpecified: -tokensToSell,
-      sqrtPriceLimitX96:
-        1461446703485210103287273052203988822378723970342n - 1n,
-    },
-    { takeClaims: false, settleUsingBurn: false },
-    hookData,
-    { nonce: traderNonce }
-  );
-  await tx.wait();
-  traderNonce++;
-  const points = await hook.getStreamerPoints(
-    streamerWallet.address,
-    MOCK_TOKEN
-  );
-  const volume = await hook.getStreamerTokenVolume(
-    streamerWallet.address,
-    MOCK_TOKEN
-  );
-  const traderEth = await provider.getBalance(traderWallet.address);
-  const traderTokens = await token.balanceOf(traderWallet.address);
-  console.log("After SELL:");
-  console.log("  Streamer points:", ethers.formatEther(points));
-  console.log("  Streamer referral volume:", ethers.formatEther(volume), "ETH");
-  console.log("  Trader ETH:", ethers.formatEther(traderEth));
-  console.log("  Trader tokens:", ethers.formatEther(traderTokens));
+
+  try {
+    await token.approve(SWAP_ROUTER, tokensToSell, { nonce: traderNonce });
+    traderNonce++;
+
+    // Estimate gas for sell operation
+    const gasEstimate = await swapRouter.swap.estimateGas(
+      poolKey,
+      {
+        zeroForOne: false,
+        amountSpecified: -tokensToSell,
+        sqrtPriceLimitX96:
+          1461446703485210103287273052203988822378723970342n - 1n,
+      },
+      { takeClaims: false, settleUsingBurn: false },
+      hookData
+    );
+
+    console.log(`Estimated gas for SELL: ${gasEstimate.toString()}`);
+
+    const tx = await swapRouter.swap(
+      poolKey,
+      {
+        zeroForOne: false,
+        amountSpecified: -tokensToSell,
+        sqrtPriceLimitX96:
+          1461446703485210103287273052203988822378723970342n - 1n,
+      },
+      { takeClaims: false, settleUsingBurn: false },
+      hookData,
+      {
+        nonce: traderNonce,
+        gasLimit: (gasEstimate * 120n) / 100n, // Add 20% buffer
+      }
+    );
+
+    const receipt = await tx.wait();
+    console.log(
+      `SELL transaction successful. Gas used: ${receipt.gasUsed.toString()}`
+    );
+    traderNonce++;
+
+    const points = await hook.getStreamerPoints(
+      streamerWallet.address,
+      MOCK_TOKEN
+    );
+    const volume = await hook.getStreamerTokenVolume(
+      streamerWallet.address,
+      MOCK_TOKEN
+    );
+    const traderEth = await provider.getBalance(traderWallet.address);
+    const traderTokens = await token.balanceOf(traderWallet.address);
+    console.log("After SELL:");
+    console.log("  Streamer points:", ethers.formatEther(points));
+    console.log(
+      "  Streamer referral volume:",
+      ethers.formatEther(volume),
+      "ETH"
+    );
+    console.log("  Trader ETH:", ethers.formatEther(traderEth));
+    console.log("  Trader tokens:", ethers.formatEther(traderTokens));
+  } catch (error) {
+    console.error("SELL operation failed:", error.message);
+    if (error.code === "CALL_EXCEPTION") {
+      console.log("SELL transaction reverted. This could be due to:");
+      console.log("- Insufficient token allowance");
+      console.log("- Pool liquidity issues");
+      console.log("- Price slippage limits");
+      console.log("- Hook contract revert conditions");
+    }
+    throw error;
+  }
 }
 
 async function logTradeSummary(tradeNumber: number) {
@@ -279,6 +382,120 @@ async function showFinalResults() {
   console.log("Total referral volume:", ethers.formatEther(totalVolume), "ETH");
   console.log("Final trader ETH balance:", ethers.formatEther(traderEth));
   console.log("Final trader token balance:", ethers.formatEther(traderTokens));
+}
+
+async function claimRewards() {
+  console.log("=== Claiming Rewards ===");
+
+  try {
+    // Check if streamer has any points for the token
+    const points = await hook.getStreamerPoints(
+      streamerWallet.address,
+      MOCK_TOKEN
+    );
+    const volume = await hook.getStreamerTokenVolume(
+      streamerWallet.address,
+      MOCK_TOKEN
+    );
+
+    console.log("Pre-claim state:");
+    console.log("  Streamer points:", ethers.formatEther(points));
+    console.log(
+      "  Streamer referral volume:",
+      ethers.formatEther(volume),
+      "ETH"
+    );
+
+    if (points === 0n) {
+      console.log("No points to claim for this token");
+      return;
+    }
+
+    // Get reward token info
+    const rewardInfo = await hook.getRewardTokenInfo(MOCK_TOKEN);
+
+    if (rewardInfo.tokenAddress === ethers.ZeroAddress) {
+      console.log("No reward token setup for this token");
+      return;
+    }
+
+    console.log("Reward token info:");
+    console.log("  Token address:", rewardInfo.tokenAddress);
+    console.log(
+      "  Rate per point:",
+      ethers.formatEther(rewardInfo.ratePerPoint)
+    );
+
+    const potentialReward = points * rewardInfo.ratePerPoint;
+    console.log(
+      "  Expected reward:",
+      ethers.formatEther(potentialReward),
+      "tokens"
+    );
+
+    // Check streamer's token balance before claim
+    const tokenContract = new ethers.Contract(
+      MOCK_TOKEN,
+      erc20Abi,
+      streamerWallet
+    );
+    const preClaimBalance = await tokenContract.balanceOf(
+      streamerWallet.address
+    );
+    console.log(
+      "  Streamer token balance before claim:",
+      ethers.formatEther(preClaimBalance)
+    );
+
+    // Claim rewards if enabled
+    if (CLAIM_ACTIVE) {
+      // Perform claim
+      console.log("Claiming rewards...");
+      const tx = await hook.claimReward(MOCK_TOKEN, { nonce: streamerNonce });
+      const receipt = await tx.wait();
+      streamerNonce++;
+
+      console.log(`Claim successful! Gas used: ${receipt.gasUsed.toString()}`);
+
+      // Check post-claim state
+      const postClaimPoints = await hook.getStreamerPoints(
+        streamerWallet.address,
+        MOCK_TOKEN
+      );
+      const postClaimVolume = await hook.getStreamerTokenVolume(
+        streamerWallet.address,
+        MOCK_TOKEN
+      );
+      const postClaimBalance = await tokenContract.balanceOf(
+        streamerWallet.address
+      );
+
+      console.log("Post-claim state:");
+      console.log("  Streamer points:", ethers.formatEther(postClaimPoints));
+      console.log(
+        "  Streamer referral volume:",
+        ethers.formatEther(postClaimVolume),
+        "ETH"
+      );
+      console.log(
+        "  Streamer token balance:",
+        ethers.formatEther(postClaimBalance)
+      );
+      console.log(
+        "  Tokens received:",
+        ethers.formatEther(postClaimBalance - preClaimBalance)
+      );
+    }
+  } catch (error) {
+    console.error("Claim rewards failed:", error.message);
+    if (error.code === "CALL_EXCEPTION") {
+      console.log("Claim transaction reverted. Possible reasons:");
+      console.log("- Not a registered streamer");
+      console.log("- Reward token not setup");
+      console.log("- No referral volume to claim");
+      console.log("- Insufficient reward token balance in contract");
+    }
+  }
 }
 
 main().catch(console.error);

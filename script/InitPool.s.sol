@@ -103,8 +103,8 @@ contract InitPool is Script {
         console.log("Liquidity added successfully!");
         console.log("  ETH amount:", ETH_LIQUIDITY);
 
-        // Setup token reward with 100 tokens per point
-        hook.setupReward(address(token), 100e18);
+        // Setup token reward with 1000 tokens per point
+        hook.setupReward(address(token), 1000e18);
 
         // Log deployment summary
         console.log("\n=== Pool Deployment Summary ===");

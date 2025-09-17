@@ -159,7 +159,7 @@ contract StreamFund is BaseHook, ERC6909 {
         RewardToken storage reward = rewardTokens[tokenAddress];
 
         // Calculate token amount to give based on points and rate
-        uint256 tokenAmount = availablePoints * reward.ratePerPoint;
+        uint256 tokenAmount = (availablePoints * reward.ratePerPoint) / (10 ** IERC20(tokenAddress).decimals());
 
         // Check contract's current token balance
         uint256 contractBalance = IERC20(tokenAddress).balanceOf(address(this));
@@ -245,11 +245,11 @@ contract StreamFund is BaseHook, ERC6909 {
         if (swapParams.zeroForOne) {
             // Buying TOKEN with ETH - 5 points per ETH
             ethAmount = uint256(int256(-delta.amount0()));
-            pointsToMint = ethAmount * 5;
+            pointsToMint = (ethAmount * 5);
         } else {
             // Selling TOKEN for ETH - 2 points per ETH
             ethAmount = uint256(int256(delta.amount0()));
-            pointsToMint = ethAmount * 2;
+            pointsToMint = (ethAmount * 2);
         }
 
         // Update referral volume for this specific token
