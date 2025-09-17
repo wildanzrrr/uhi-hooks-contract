@@ -44,6 +44,7 @@ contract StreamFund is BaseHook, ERC6909 {
         address indexed tokenAddress,
         uint256 rewardAmount
     );
+    event NewOwner(address indexed oldOwner, address indexed newOwner);
     event RewardTokenSetup(address indexed tokenAddress, uint256 ratePerPoint);
     event RewardRateUpdated(address indexed tokenAddress, uint256 oldRate, uint256 newRate);
     event RewardUpdaterGranted(address indexed tokenAddress, address indexed updater);
@@ -86,6 +87,13 @@ contract StreamFund is BaseHook, ERC6909 {
             afterAddLiquidityReturnDelta: false,
             afterRemoveLiquidityReturnDelta: false
         });
+    }
+
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "Invalid new owner address");
+        owner = newOwner;
+
+        emit NewOwner(msg.sender, newOwner);
     }
 
     function grantTokenRewardUpdater(address tokenAddress, address updater) external onlyOwner {
@@ -272,43 +280,7 @@ contract StreamFund is BaseHook, ERC6909 {
         return rewardTokens[tokenAddress];
     }
 
-    function getContractTokenBalance(address tokenAddress) external view returns (uint256) {
-        return IERC20(tokenAddress).balanceOf(address(this));
-    }
-
-    function getLastTradeTime(address streamer, address buyer) external view returns (uint256) {
-        return lastTradeTime[streamer][buyer];
-    }
-
-    function getRemainingCooldown(address streamer, address buyer) external view returns (uint256) {
-        uint256 lastTrade = lastTradeTime[streamer][buyer];
-        if (lastTrade == 0) return 0;
-
-        uint256 timePassed = block.timestamp - lastTrade;
-        if (timePassed >= TRADE_COOLDOWN) return 0;
-
-        return TRADE_COOLDOWN - timePassed;
-    }
-
-    function calculateRewardAmount(address streamer, address tokenAddress) external view returns (uint256) {
-        uint256 tokenId = uint256(uint160(tokenAddress));
-        uint256 points = balanceOf[streamer][tokenId];
-        RewardToken memory reward = rewardTokens[tokenAddress];
-
-        if (reward.tokenAddress == address(0) || points == 0) return 0;
-
-        uint256 tokenAmount = points * reward.ratePerPoint;
-        uint256 contractBalance = IERC20(tokenAddress).balanceOf(address(this));
-
-        return tokenAmount > contractBalance ? contractBalance : tokenAmount;
-    }
-
     function isTokenRewardUpdater(address tokenAddress, address account) external view returns (bool) {
         return tokenRewardUpdaters[tokenAddress][account];
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "Invalid new owner address");
-        owner = newOwner;
     }
 }

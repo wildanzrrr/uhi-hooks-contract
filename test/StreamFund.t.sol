@@ -45,8 +45,8 @@ contract TestStreamFund is Test, Deployers {
         tokenCurrency = Currency.wrap(address(token));
 
         // Mint tokens
-        token.mint(address(this), 1000 ether);
-        token.mint(trader, 1000 ether);
+        token.mint(address(this), 1_000_000_000e18);
+        token.mint(trader, 1_000e18);
 
         // Deploy hook
         uint160 flags = uint160(Hooks.AFTER_SWAP_FLAG);
@@ -67,7 +67,7 @@ contract TestStreamFund is Test, Deployers {
 
         // Add liquidity to ETH-TOKEN pool
         uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(60);
-        uint256 ethToAdd = 1 ether;
+        uint256 ethToAdd = 10 ether;
         uint128 liquidityDelta = LiquidityAmounts.getLiquidityForAmount0(SQRT_PRICE_1_1, sqrtPriceAtTickUpper, ethToAdd);
 
         modifyLiquidityRouter.modifyLiquidity{value: ethToAdd}(
@@ -83,6 +83,47 @@ contract TestStreamFund is Test, Deployers {
 
         // Fund trader with ETH
         vm.deal(trader, 10 ether);
+
+        // Configure token reward updater
+        vm.prank(owner);
+        hook.grantTokenRewardUpdater(address(token), updater);
+
+        // Set up token reward with 100 tokens per point
+        vm.prank(updater);
+        hook.setupReward(address(token), 100e18); // 100 tokens per point
+
+        // Check initial state
+        StreamFund.RewardToken memory rewardToken = hook.getRewardTokenInfo(address(token));
+        assertEq(rewardToken.tokenAddress, address(token));
+        assertEq(rewardToken.ratePerPoint, 100e18);
+    }
+
+    function testTransferOwnershipNoOwner() public {
+        vm.prank(stranger);
+
+        vm.expectRevert("Only owner can call this function");
+        hook.transferOwnership(stranger);
+    }
+
+    function testTransferOwnershipZeroAddress() public {
+        vm.prank(owner);
+
+        vm.expectRevert("Invalid new owner address");
+        hook.transferOwnership(address(0));
+    }
+
+    function testTransferOwnershipSuccess() public {
+        vm.prank(owner);
+
+        vm.expectEmit();
+        emit StreamFund.NewOwner(owner, stranger);
+        hook.transferOwnership(stranger);
+
+        // Check new owner can perform owner actions
+        // Create a new token to avoid conflicts with existing setup
+        MockERC20 newToken = new MockERC20("Owner Test Token", "OTT", 18);
+        vm.prank(stranger);
+        hook.grantTokenRewardUpdater(address(newToken), address(0x999));
     }
 
     function testRegisterStreamer() public {
@@ -131,9 +172,7 @@ contract TestStreamFund is Test, Deployers {
     }
 
     function testGrantTokenRewardUpdaterAlreadyUpdater() public {
-        vm.prank(owner);
-        hook.grantTokenRewardUpdater(address(token), updater);
-
+        // The updater is already granted in setUp, so this should fail
         vm.prank(owner);
         vm.expectRevert("Already a reward updater for this token");
         hook.grantTokenRewardUpdater(address(token), updater);
@@ -143,10 +182,10 @@ contract TestStreamFund is Test, Deployers {
         vm.prank(owner);
 
         vm.expectEmit();
-        emit StreamFund.RewardUpdaterGranted(address(token), updater);
-        hook.grantTokenRewardUpdater(address(token), updater);
+        emit StreamFund.RewardUpdaterGranted(address(token), stranger);
+        hook.grantTokenRewardUpdater(address(token), stranger);
 
-        assertTrue(hook.isTokenRewardUpdater(address(token), updater));
+        assertTrue(hook.isTokenRewardUpdater(address(token), stranger));
     }
 
     function testRevokeTokenRewardUpdaterNoOwner() public {
@@ -174,21 +213,100 @@ contract TestStreamFund is Test, Deployers {
         vm.prank(owner);
 
         vm.expectRevert("Not a reward updater for this token");
-        hook.revokeTokenRewardUpdater(address(token), updater);
+        hook.revokeTokenRewardUpdater(address(token), stranger); // stranger was never granted updater role
     }
 
     function testRevokeTokenRewardUpdaterSuccess() public {
-        // First grant
-        vm.prank(owner);
-        hook.grantTokenRewardUpdater(address(token), updater);
-
-        // Now revoke
+        // The updater was already granted in setUp, so we can revoke it directly
         vm.prank(owner);
         vm.expectEmit();
         emit StreamFund.RewardUpdaterRevoked(address(token), updater);
         hook.revokeTokenRewardUpdater(address(token), updater);
 
         assertFalse(hook.isTokenRewardUpdater(address(token), updater));
+    }
+
+    function testSetupRewardNoTokenRewardUpdater() public {
+        vm.prank(stranger);
+
+        vm.expectRevert("Only owner or token reward updater can call this function");
+        hook.setupReward(address(token), 1e18);
+    }
+
+    function testSetupRewardZeroToken() public {
+        vm.prank(owner);
+
+        vm.expectRevert("Invalid token address");
+        hook.setupReward(address(0), 1e18);
+    }
+
+    function testSetupRewardZeroRate() public {
+        vm.prank(owner);
+
+        vm.expectRevert("Rate must be greater than 0");
+        hook.setupReward(address(token), 0);
+    }
+
+    function testSetupRewardTokenAlreadyAdded() public {
+        // Token is already setup in setUp, so trying to setup again should fail
+        vm.prank(owner);
+        vm.expectRevert("Token already added");
+        hook.setupReward(address(token), 2e18);
+    }
+
+    function testSetupRewardSuccess() public {
+        // Create a new token since the original is already setup
+        MockERC20 newToken = new MockERC20("New Token", "NEW", 18);
+
+        vm.prank(owner);
+        vm.expectEmit();
+        emit StreamFund.RewardTokenSetup(address(newToken), 1e18);
+        hook.setupReward(address(newToken), 1e18);
+
+        StreamFund.RewardToken memory rewardToken = hook.getRewardTokenInfo(address(newToken));
+        assertEq(rewardToken.tokenAddress, address(newToken));
+        assertEq(rewardToken.ratePerPoint, 1e18);
+    }
+
+    function testUpdateRewardRateNoTokenRewardUpdater() public {
+        vm.prank(stranger);
+
+        vm.expectRevert("Only owner or token reward updater can call this function");
+        hook.updateRewardRate(address(token), 2e18);
+    }
+
+    function testUpdateRewardRateZeroToken() public {
+        vm.prank(owner);
+
+        vm.expectRevert("Invalid token address");
+        hook.updateRewardRate(address(0), 2e18);
+    }
+
+    function testUpdateRewardRateZeroRate() public {
+        // Use the token that's already setup in setUp (rate: 100e18)
+        vm.prank(owner);
+        vm.expectRevert("Rate must be greater than 0");
+        hook.updateRewardRate(address(token), 0);
+    }
+
+    function testUpdateRewardRateTokenNotSetup() public {
+        // Create a new token that hasn't been setup
+        MockERC20 newToken = new MockERC20("New Token", "NEW", 18);
+
+        vm.prank(owner);
+        vm.expectRevert("Token not setup");
+        hook.updateRewardRate(address(newToken), 2e18);
+    }
+
+    function testUpdateRewardRateSuccess() public {
+        // Use the token that's already setup in setUp
+        vm.prank(owner);
+        vm.expectEmit();
+        emit StreamFund.RewardRateUpdated(address(token), 100e18, 2e18); // Current rate is 100e18 from setUp
+        hook.updateRewardRate(address(token), 2e18);
+
+        StreamFund.RewardToken memory rewardToken = hook.getRewardTokenInfo(address(token));
+        assertEq(rewardToken.ratePerPoint, 2e18);
     }
 
     // function testGetNotRegisteredStreamerInfo() public {
