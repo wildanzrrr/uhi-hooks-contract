@@ -13,7 +13,6 @@ const TRADER_PK = process.env.TRADER_PK!;
 const STREAMER_PK = process.env.STREAMER_PK!;
 const RPC_URL = process.env.RPC_URL!;
 
-const TRADE_AMOUNT = ethers.parseEther("0.5"); // 0.5 ETH per trade
 const NUM_TRADES = 10;
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
@@ -25,11 +24,12 @@ const swapRouterAbi = [
   "function swap(tuple(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, tuple(bool zeroForOne, int256 amountSpecified, uint160 sqrtPriceLimitX96) params, tuple(bool takeClaims, bool settleUsingBurn) testSettings, bytes hookData) external payable",
 ];
 const streamFundAbi = [
-  // Add ABI for StreamFund functions: isRegistered, registerStreamer, getStreamerPoints, getStreamerInfo
+  // Updated ABI for new StreamFund functions
   "function isRegistered(address) view returns (bool)",
   "function registerStreamer() external",
-  "function getStreamerPoints(address) view returns (uint256)",
-  "function getStreamerInfo(address) view returns (tuple(uint256 referralVolume, uint256 points))",
+  "function getStreamerPoints(address streamerAddress, address tokenAddress) view returns (uint256)",
+  "function getStreamerTokenVolume(address streamerAddress, address tokenAddress) view returns (uint256)",
+  "function getRewardTokenInfo(address tokenAddress) view returns (tuple(address tokenAddress, uint256 ratePerPoint))",
 ];
 const erc20Abi = [
   "function balanceOf(address) view returns (uint256)",
@@ -124,17 +124,19 @@ async function performTrade(tradeNumber: number) {
 }
 
 async function logInitialState() {
-  const points = await hook.getStreamerPoints(streamerWallet.address);
-  const info = await hook.getStreamerInfo(streamerWallet.address);
+  const points = await hook.getStreamerPoints(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
+  const volume = await hook.getStreamerTokenVolume(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
   const traderEth = await provider.getBalance(traderWallet.address);
   const traderTokens = await token.balanceOf(traderWallet.address);
   console.log("Initial state:");
   console.log("  Streamer points:", ethers.formatEther(points));
-  console.log(
-    "  Streamer referral volume:",
-    ethers.formatEther(info[0]),
-    "ETH"
-  );
+  console.log("  Streamer referral volume:", ethers.formatEther(volume), "ETH");
   console.log("  Trader ETH:", ethers.formatEther(traderEth));
   console.log("  Trader tokens:", ethers.formatEther(traderTokens));
 }
@@ -161,16 +163,18 @@ async function performBuyOperation(hookData: string) {
   );
   await tx.wait();
   traderNonce++;
-  const points = await hook.getStreamerPoints(streamerWallet.address);
-  const info = await hook.getStreamerInfo(streamerWallet.address);
+  const points = await hook.getStreamerPoints(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
+  const volume = await hook.getStreamerTokenVolume(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
   const traderTokens = await token.balanceOf(traderWallet.address);
   console.log("After BUY:");
   console.log("  Streamer points:", ethers.formatEther(points));
-  console.log(
-    "  Streamer referral volume:",
-    ethers.formatEther(info[0]),
-    "ETH"
-  );
+  console.log("  Streamer referral volume:", ethers.formatEther(volume), "ETH");
   console.log("  Trader tokens:", ethers.formatEther(traderTokens));
 }
 
@@ -204,42 +208,75 @@ async function performSellOperation(hookData: string) {
   );
   await tx.wait();
   traderNonce++;
-  const points = await hook.getStreamerPoints(streamerWallet.address);
-  const info = await hook.getStreamerInfo(streamerWallet.address);
+  const points = await hook.getStreamerPoints(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
+  const volume = await hook.getStreamerTokenVolume(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
   const traderEth = await provider.getBalance(traderWallet.address);
   const traderTokens = await token.balanceOf(traderWallet.address);
   console.log("After SELL:");
   console.log("  Streamer points:", ethers.formatEther(points));
-  console.log(
-    "  Streamer referral volume:",
-    ethers.formatEther(info[0]),
-    "ETH"
-  );
+  console.log("  Streamer referral volume:", ethers.formatEther(volume), "ETH");
   console.log("  Trader ETH:", ethers.formatEther(traderEth));
   console.log("  Trader tokens:", ethers.formatEther(traderTokens));
 }
 
 async function logTradeSummary(tradeNumber: number) {
-  const points = await hook.getStreamerPoints(streamerWallet.address);
-  const info = await hook.getStreamerInfo(streamerWallet.address);
+  const points = await hook.getStreamerPoints(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
+  const volume = await hook.getStreamerTokenVolume(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
   console.log("Trade Summary:");
   console.log("  Trade number:", tradeNumber);
   console.log("  Total points:", ethers.formatEther(points));
-  console.log("  Total volume:", ethers.formatEther(info[0]), "ETH");
+  console.log("  Total volume:", ethers.formatEther(volume), "ETH");
 }
 
 async function showFinalResults() {
   console.log("=== Final Results ===");
-  const totalPoints = await hook.getStreamerPoints(streamerWallet.address);
-  const finalStreamerInfo = await hook.getStreamerInfo(streamerWallet.address);
+  const totalPoints = await hook.getStreamerPoints(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
+  const totalVolume = await hook.getStreamerTokenVolume(
+    streamerWallet.address,
+    MOCK_TOKEN
+  );
   const traderEth = await provider.getBalance(traderWallet.address);
   const traderTokens = await token.balanceOf(traderWallet.address);
+
+  // Try to get reward token info
+  try {
+    const rewardInfo = await hook.getRewardTokenInfo(MOCK_TOKEN);
+    console.log("Reward token setup:");
+    console.log("  Token address:", rewardInfo.tokenAddress);
+    console.log(
+      "  Rate per point:",
+      ethers.formatEther(rewardInfo.ratePerPoint)
+    );
+
+    if (rewardInfo.tokenAddress !== ethers.ZeroAddress) {
+      const potentialReward = totalPoints * rewardInfo.ratePerPoint;
+      console.log(
+        "  Potential reward:",
+        ethers.formatEther(potentialReward),
+        "tokens"
+      );
+    }
+  } catch (error) {
+    console.log("Reward token not setup for this token");
+  }
+
   console.log("Total streamer points:", ethers.formatEther(totalPoints));
-  console.log(
-    "Total referral volume:",
-    ethers.formatEther(finalStreamerInfo[0]),
-    "ETH"
-  );
+  console.log("Total referral volume:", ethers.formatEther(totalVolume), "ETH");
   console.log("Final trader ETH balance:", ethers.formatEther(traderEth));
   console.log("Final trader token balance:", ethers.formatEther(traderTokens));
 }

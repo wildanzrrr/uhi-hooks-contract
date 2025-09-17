@@ -25,7 +25,8 @@ contract InitPool is Script {
     uint24 constant POOL_FEE = 3000; // 0.3%
 
     // Liquidity parameters
-    uint256 constant TOKEN_SUPPLY = 100_000_000 ether; // 100M tokens
+    uint256 constant TOKEN_SUPPLY = 999_000_000e18; // 999 tokens
+    uint256 constant TOKEN_REWARD = 1_000_000e18; // 1M tokens
     uint256 constant ETH_LIQUIDITY = 10 ether; // 10 ETH
     int24 constant TICK_LOWER = -60;
     int24 constant TICK_UPPER = 60;
@@ -52,6 +53,7 @@ contract InitPool is Script {
 
         // Mint tokens to deployer
         token.mint(msg.sender, TOKEN_SUPPLY);
+        token.mint(streamFundAddr, TOKEN_REWARD);
         console.log("Minted", TOKEN_SUPPLY / 1e18, "tokens to deployer");
 
         // Set up currencies (following your test pattern)
@@ -100,6 +102,9 @@ contract InitPool is Script {
 
         console.log("Liquidity added successfully!");
         console.log("  ETH amount:", ETH_LIQUIDITY);
+
+        // Setup token reward with 100 tokens per point
+        hook.setupReward(address(token), 100e18);
 
         // Log deployment summary
         console.log("\n=== Pool Deployment Summary ===");
