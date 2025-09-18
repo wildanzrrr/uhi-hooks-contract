@@ -2,11 +2,17 @@
 
 ![StreamFund Banner](StreamFund.jpeg)
 
-Is a streaming meta narrative for everyone. This project is inspired by the idea of creating a platform where everyone can participate and make the hype of specific event or token.
+Is a streaming meta narrative for everyone. Inspired by the idea of creating a platform where everyone can participate and make the hype of specific event or token. Let's everyone do the marketing for you.
 
 ## Introduction
 
 StreamFund is a custom hooks in Uniswap V4 that allows token creators to set up bounty rewards for making a hype around their tokens. Think of it as a troops of marketing agents who are incentivized to promote the token in exchange for rewards. Anyone can join the hype army and earn rewards by participating in promotional activities with streaming.
+
+## Demo
+
+Watch the StreamFund demo video to see how it works:
+
+[![StreamFund Demo](https://img.shields.io/badge/Watch-Demo%20Video-red?style=for-the-badge&logo=youtube)](https://www.loom.com/share/df92893804fc4c1f86335aae77fbf92e?sid=c83f2210-bb91-4232-85e8-319f937a9f36)
 
 ## Features
 
