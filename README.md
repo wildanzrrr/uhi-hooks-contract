@@ -1,4 +1,4 @@
-# StreamFund
+# StreamFund (No Partner Integration)
 
 ![StreamFund Banner](StreamFund.jpeg)
 
