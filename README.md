@@ -1,160 +1,154 @@
-# Building your first hook
+# StreamFund
 
-A really simple "points hook"
+![StreamFund Banner](StreamFund.jpeg)
 
-Assume you have some ETH/TOKEN pool that exists. We wanna make a hook that can be attached
-to such kinds of pools where:
+Is a streaming meta narrative for everyone. This project is inspired by the idea of creating a platform where everyone can participate and make the hype of specific event or token.
 
-every time somebody swaps ETH for TOKEN (i.e. spends ETH, purchases TOKEN) - we issue them some "points"
+## Introduction
 
-> This is not production ready by any means. It is a PoC.
+StreamFund is a custom hooks in Uniswap V4 that allows token creators to set up bounty rewards for making a hype around their tokens. Think of it as a troops of marketing agents who are incentivized to promote the token in exchange for rewards. Anyone can join the hype army and earn rewards by participating in promotional activities with streaming.
 
-### Design
+## Features
 
-1. how many points do we give out per swap?
+- Configurable reward rates per 1 ETH volume traded
+- Measure trading volume of referred users
+- Using the same token for rewards ties to specific ERC6909 ID
+- Shareable streaming links in any social media platform
 
-we're going to give 20% of the ETH spent in the swap in the form of points
+## Installation
 
-e.g. if someone sells 1 ETH to purchase TOKEN, they get 20% of 1 = 0.2 POINTS
+### Prerequisites
 
-2. how do we represent these points?
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- [Git](https://git-scm.com/)
+- [Node.js](https://nodejs.org/en/download/)
+- [pnpm](https://pnpm.io/)
+- [Make](https://www.gnu.org/software/make/)
 
-points themselves are going to be an ERC-1155 token.
+### Setup Instructions
 
-ERC-1155 allows minting "x" number of tokens that are distinct based on some sort of "key"
+1. **Clone the repository**
 
-since one hook can be attached to multipple pools, ETH/A, ETH/B, ETH/C -
+   ```bash
+   https://github.com/wildanzrrr/uhi-hooks-contract
+   cd uhi-hooks-contract
+   ```
 
-points = minting some amount of ERC-1155 tokens for that pool to the user
+2. **Install dependencies**
 
-> Q: why not use ERC-6909 for doing this?
-> A: you totally can! erc-1155 is just a bit more familiar to people so for the first workshop i wanted to stick with this
+   ```bash
+   # Install Foundry dependencies
+   forge install
+   ```
 
----
+3. **Copy the example configuration file**
 
-### beforeSwap vs afterSwap
+   ```bash
+   cp .env.example .env
+   cp frontend/.env.example frontend/.env
+   ```
 
-this balancedelta thing is actually quite important for us
+4. **Install Node.js dependencies**
 
-we're giving out points as a % of the amount of ETH that was spent in the swap
+   ```bash
+   pnpm install
+   ```
 
-how much ETH was spent in the swap?
+5. **Install frontend dependencies**
 
-this is not a question that can be answered in `beforeSwap` because it is literally unknown until the swap happens
+   ```bash
+   cd frontend
+   pnpm install
+   ```
 
-1. potentially, slippage limits could hit causing only a partial swap to happen
-   e.g. Alice could've said sell 1 ETH for TOKEN, but slippage limit is hit, and only 0.5 ETH was actually swapped
+6. **Run local anvil node**
 
-2. there are broadly two types of swaps that uniswap can do. these are referred to as exact-input and exact-output swaps.
+   ```bash
+   anvil
+   ```
 
-e.g. ETH/USDC pool. Alice wants to swap ETH for USDC.
+7. **Run local deployment script**
 
-exact input variant = Sell 1 ETH for USDC
-e.g. she is "exactly" specifying how much ETH to sell, but not specifying how much USDC to get back
+   In another terminal, run:
 
-exact output variant = Sell UP TO 1 ETH for exactly 1500 USDC
-e.g. she is "exactly" specifying how much USDC she wants back, and only a upper limit on how much ETH she's willing to spend
+   ```bash
+   make deployAll
+   ```
 
----
+8. **Run the frontend application**
 
-the "BalanceDelta" thing we have in `afterSwap` becomes very crucial to our use case
-because `BalanceDelta` => the exact amount of tokens that need to be transferred (how much ETH was spent, how much TOKEN to withdraw)
+   In another terminal, run:
 
-Tl;DR: we gotta use `afterSwap` because we do not know how much ETH Alice spent before the swap happens
+   ```bash
+   cd frontend
+   pnpm dev
+   ```
 
-### minting points
+   Then open your browser and navigate to `http://localhost:3000`.
 
-who do we actually mint points to
+9. **Simulate trading volume**
 
-does Uniswap (or our hook) have any idea who tf Alice is?
-do we have Alice's address?
+   In another terminal, run:
 
-Alice -> Router -> PoolManager
--> msg.sender = Router
--> Hook.afterSwap(sender)
-sender = Router address
-msg.sender = Pool Manager
+   ```bash
+   pnpm simulate-trades
+   ```
 
-ok we cannot use `sender` or `msg.sender`
+## Usage
 
-maybe we can use `tx.origin`. is that true?
+### Development Commands
 
-if Alice is using an account abstracted wallet (SC wallet)
+#### Overview
 
-`tx.origin` = address of the relayer
+```bash
+# Using Makefile
+make <command>
 
-GENERAL PURPOSE: `tx.origin` doesnt work either
-
----
-
-how tf do we figure out who to mint points to
-
-we're gonna ask the user to give us an address to mint points to (optionally)
-
-if they dont specify an address/invalid address = dont mint any points
-
-#### hookData
-
-hookData allows users to pass in arbitrary information meant for use by the hook contract
-
-Alice -> Router.swap(...., hookData) -> PoolManager.swap(...., hookData) -> HookContract.before..(..., hookData)
-
-the hook contract can figure out what it wants to do with that hookData
-
-in our case, we're gonna use this as a way to ask the user for an address
-
-to illustrate the concept a bit better, a couple examples of better ways to use hookData
-
-e.g. KYC hook for example
-verify a ZK Proof that somebody is actually a verified human (World App ZK Proof)
-hook only lets you swap/become an LP if youre a human
-
-ZK Proof => hookData
-
-#### BalanceDelta
-
-effectively, for all intents and purposes, you can think of BalanceDelta as a struct with two values
-
-```
-struct BalanceDelta {
-    int128 amount0;
-    int128 amount1;
-}
+make help  # List all available commands
+make deployCore # Deploy Uniswap V4 Core contracts
+make generateSalt # Generate Hook Salt
+make deploySF # Deploy StreamFund contract
+make deployAll # Deploy all contracts in sequence (Core, Salt, StreamFund)
+make test # Run all tests
+make testCoverageReport # Generate HTML coverage report
 ```
 
-for a given operation (e.g. a swap) the related `BalanceDelta` contains amounts of token0 and token1 that need to be moved around
+#### Code Formatting
 
-`amount0` => amount of token0
-`amount1` => amount of token1
-
-NOTE: these amounts are `int`s and NOT `uint`s
-i.e. these can be negative numbers
-
-in fact, in case of a swap, one of them will always be a negative number
-
-there's a convention that's followed in uniswap
-
-where everytime we talk about "money changing hands", we represent money coming in to uniswap and money going out of uniswap based on the sign of the numeric value
-
-this "direction" of a token transfer is represented from the perspective of the caller to uniswap
-
-+ve number => money is coming in to user's wallet (i.e. money is leaving Uniswap)
--ve number => money is leaving user's wallet (i.e. money is entering Uniswap)
-
-in the case of a Swap where youre exchanging one token for another
-
-imagine ETH/USDC pool, selling ETH for USDC, ETH is token0, USDC is token1
-
-```
-BalanceDelta {
-    amount0 = some negative number (amount of ETH being swapped),
-    amount1 = some positive number (amount of USDC being swapped)
-}
+```bash
+forge fmt
 ```
 
-in the case of Adding Liquidity to a pool,
+## Project Structure
 
-(under the asumption you are adding both tokens as liquidity)
+```
+uhi-hooks-contract/
+├── Makefile
+├── package.json
+├── README.md
+├── frontend/                     # Next.js frontend application
+│   ├── components/
+│   └── ...
+├── lib/                          # External libraries (installed via Foundry)
+│   ├── forge-std/
+│   └── ...
+├── script/                       # Deployment and utility scripts
+│   ├── DeployCore.s.sol
+│   ├── ...
+├── src/                          # Smart contract source code
+│   └── StreamFund.sol
+└── test/                         # Test files
+    └── StreamFund.t.sol
 
-amount0 = -ve
-amount1 = -ve
+
+```
+
+## Development Tools
+
+- **VS Code**: Recommended IDE with Solidity extensions
+- **Foundry**: Smart contract development framework
+- **Next.js**: React framework for the frontend application
+
+## License
+
+MIT License - see the [LICENSE](LICENSE) file for details.

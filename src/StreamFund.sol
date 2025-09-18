@@ -15,7 +15,16 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 
+/**
+ * @title StreamFund Hook Contract
+ * @notice A Uniswap V4 hook that rewards streamers based on referral trades in ETH-TOKEN pools.
+ * @dev Inherits from BaseHook and ERC6909 for hook functionality and token management.
+ */
 contract StreamFund is BaseHook, ERC6909 {
+    /**
+     * @notice Struct representing a reward token configuration.
+     * @dev Stores the token address and the reward rate per point.
+     */
     struct RewardToken {
         address tokenAddress;
         uint256 ratePerPoint; // Amount of tokens per 1 point (in token's smallest unit)
@@ -52,11 +61,18 @@ contract StreamFund is BaseHook, ERC6909 {
     event PointsEarned(address indexed streamer, address indexed buyer, address indexed tokenAddress, uint256 points);
     event TradeCooldownActive(address indexed streamer);
 
+    /**
+     * @notice Modifier to restrict access to the owner.
+     */
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner can call this function");
         _;
     }
 
+    /**
+     * @notice Modifier to restrict access to the owner or token reward updaters.
+     * @param tokenAddress The address of the token.
+     */
     modifier onlyTokenRewardUpdater(address tokenAddress) {
         require(
             msg.sender == owner || tokenRewardUpdaters[tokenAddress][msg.sender],
@@ -65,11 +81,21 @@ contract StreamFund is BaseHook, ERC6909 {
         _;
     }
 
+    /**
+     * @notice Constructor to initialize the contract with the pool manager.
+     * @dev Sets the owner to a hardcoded address for testing purposes.
+     * @param _manager The IPoolManager instance.
+     */
     constructor(IPoolManager _manager) BaseHook(_manager) {
         // FOR TESTING PURPOSES ONLY AND LOCAL DEPLOYMENTS
         owner = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
     }
 
+    /**
+     * @notice Returns the hook permissions for this contract.
+     * @dev Overrides BaseHook to specify which hooks are enabled.
+     * @return Permissions struct indicating enabled hooks.
+     */
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
@@ -89,6 +115,11 @@ contract StreamFund is BaseHook, ERC6909 {
         });
     }
 
+    /**
+     * @notice Transfers ownership to a new address.
+     * @dev Only callable by the current owner.
+     * @param newOwner The address of the new owner.
+     */
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "Invalid new owner address");
         owner = newOwner;
@@ -96,6 +127,12 @@ contract StreamFund is BaseHook, ERC6909 {
         emit NewOwner(msg.sender, newOwner);
     }
 
+    /**
+     * @notice Grants permission to update rewards for a specific token.
+     * @dev Only callable by the owner.
+     * @param tokenAddress The address of the token.
+     * @param updater The address to grant permission to.
+     */
     function grantTokenRewardUpdater(address tokenAddress, address updater) external onlyOwner {
         require(tokenAddress != address(0), "Invalid token address");
         require(updater != address(0), "Invalid updater address");
@@ -105,6 +142,12 @@ contract StreamFund is BaseHook, ERC6909 {
         emit RewardUpdaterGranted(tokenAddress, updater);
     }
 
+    /**
+     * @notice Revokes permission to update rewards for a specific token.
+     * @dev Only callable by the owner.
+     * @param tokenAddress The address of the token.
+     * @param updater The address to revoke permission from.
+     */
     function revokeTokenRewardUpdater(address tokenAddress, address updater) external onlyOwner {
         require(tokenAddress != address(0), "Invalid token address");
         require(updater != address(0), "Invalid updater address");
@@ -114,6 +157,12 @@ contract StreamFund is BaseHook, ERC6909 {
         emit RewardUpdaterRevoked(tokenAddress, updater);
     }
 
+    /**
+     * @notice Sets up a reward token with a given rate.
+     * @dev Only callable by authorized updaters.
+     * @param tokenAddress The address of the token.
+     * @param ratePerPoint The reward rate per point.
+     */
     function setupReward(address tokenAddress, uint256 ratePerPoint) external onlyTokenRewardUpdater(tokenAddress) {
         require(tokenAddress != address(0), "Invalid token address");
         require(ratePerPoint > 0, "Rate must be greater than 0");
@@ -125,6 +174,12 @@ contract StreamFund is BaseHook, ERC6909 {
         emit RewardTokenSetup(tokenAddress, ratePerPoint);
     }
 
+    /**
+     * @notice Updates the reward rate for a token.
+     * @dev Only callable by authorized updaters.
+     * @param tokenAddress The address of the token.
+     * @param newRatePerPoint The new reward rate per point.
+     */
     function updateRewardRate(address tokenAddress, uint256 newRatePerPoint)
         external
         onlyTokenRewardUpdater(tokenAddress)
@@ -139,12 +194,21 @@ contract StreamFund is BaseHook, ERC6909 {
         emit RewardRateUpdated(tokenAddress, oldRate, newRatePerPoint);
     }
 
+    /**
+     * @notice Registers the caller as a streamer.
+     * @dev Can only be called once per address.
+     */
     function registerStreamer() external {
         require(!isRegistered[msg.sender], "Already registered");
         isRegistered[msg.sender] = true;
         emit StreamerRegistered(msg.sender);
     }
 
+    /**
+     * @notice Claims rewards for a specific token based on accumulated points.
+     * @dev Burns points and transfers tokens to the streamer.
+     * @param tokenAddress The address of the reward token.
+     */
     function claimReward(address tokenAddress) external {
         require(isRegistered[msg.sender], "Not a registered streamer");
         require(rewardTokens[tokenAddress].tokenAddress != address(0), "Reward token not setup");
@@ -159,7 +223,7 @@ contract StreamFund is BaseHook, ERC6909 {
         RewardToken storage reward = rewardTokens[tokenAddress];
 
         // Calculate token amount to give based on points and rate
-        uint256 tokenAmount = (availablePoints * reward.ratePerPoint) / (10 ** IERC20(tokenAddress).decimals());
+        uint256 tokenAmount = (availablePoints * reward.ratePerPoint) / (10 ** 18);
 
         // Check contract's current token balance
         uint256 contractBalance = IERC20(tokenAddress).balanceOf(address(this));
@@ -177,6 +241,16 @@ contract StreamFund is BaseHook, ERC6909 {
         emit RewardClaimed(msg.sender, availablePoints, volume, tokenAddress, tokenAmount);
     }
 
+    /**
+     * @notice Hook function called after a swap.
+     * @dev Processes rewards for registered streamers based on trades.
+     * @param key The pool key.
+     * @param swapParams The swap parameters.
+     * @param delta The balance delta.
+     * @param hookData Additional data passed to the hook.
+     * @return selector The function selector.
+     * @return returnDelta The return delta.
+     */
     function _afterSwap(
         address,
         PoolKey calldata key,
@@ -266,19 +340,42 @@ contract StreamFund is BaseHook, ERC6909 {
         return (this.afterSwap.selector, 0);
     }
 
+    /**
+     * @notice Gets the referral volume for a streamer and token.
+     * @param streamerAddress The address of the streamer.
+     * @param tokenAddress The address of the token.
+     * @return The volume amount.
+     */
     function getStreamerTokenVolume(address streamerAddress, address tokenAddress) external view returns (uint256) {
         return streamerTokenVolume[streamerAddress][tokenAddress];
     }
 
+    /**
+     * @notice Gets the points balance for a streamer and token.
+     * @param streamerAddress The address of the streamer.
+     * @param tokenAddress The address of the token.
+     * @return The points amount.
+     */
     function getStreamerPoints(address streamerAddress, address tokenAddress) external view returns (uint256) {
         uint256 tokenId = uint256(uint160(tokenAddress));
         return balanceOf[streamerAddress][tokenId];
     }
 
+    /**
+     * @notice Gets the reward token information.
+     * @param tokenAddress The address of the token.
+     * @return The RewardToken struct.
+     */
     function getRewardTokenInfo(address tokenAddress) external view returns (RewardToken memory) {
         return rewardTokens[tokenAddress];
     }
 
+    /**
+     * @notice Checks if an account is a reward updater for a token.
+     * @param tokenAddress The address of the token.
+     * @param account The address to check.
+     * @return True if the account is a reward updater.
+     */
     function isTokenRewardUpdater(address tokenAddress, address account) external view returns (bool) {
         return tokenRewardUpdaters[tokenAddress][account];
     }

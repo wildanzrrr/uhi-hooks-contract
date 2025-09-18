@@ -406,7 +406,7 @@ contract TestStreamFund is Test, Deployers {
         assertGt(volume, 0);
 
         // Fund contract with some reward tokens (ensure enough for the claim)
-        uint256 requiredTokens = points * 100e18; // rate is 100 tokens per point from setUp
+        uint256 requiredTokens = points * 100e18 / 1e18; // Corrected: rate is 100e18 tokens per point, divided by 1e18 for decimals
         token.mint(address(hook), requiredTokens);
         assertEq(token.balanceOf(address(hook)), requiredTokens);
 
